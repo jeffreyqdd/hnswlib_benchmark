@@ -22,7 +22,7 @@ inline constexpr size_t K = 100;
 inline constexpr size_t num_searches = 1000;
 inline constexpr size_t nk[N] = { 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 };
 
-inline constexpr int num_threads = 30;
+inline constexpr int num_threads = 32;
 int main(int argc, char** argv) {
 
 	int opt;
