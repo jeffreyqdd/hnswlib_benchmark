@@ -65,7 +65,7 @@ if __name__ == '__main__':
         title_k.append(target_top_k)
     
     num_plots = len(rows)
-    plt.figure(figsize=(8, 12))
+    plt.figure(figsize=(8, 3 * num_plots))
 
     for i, (data, k) in enumerate(zip(rows, title_k), start=1):
         plt.subplot(num_plots, 1, i) # (row, col, idx)

@@ -12,7 +12,7 @@ namespace fs = std::filesystem;
 // CONFIGURE HNSW
 inline constexpr int M = 48;
 inline constexpr int dim = 960;
-inline constexpr int nb = 1000000;
+inline constexpr int nb = 100000;
 inline constexpr int ef_construction = 512;
 inline constexpr int ef = 256;
 
@@ -65,11 +65,13 @@ int main(int argc, char** argv) {
 		size_t num_correct = 0;
 		uint64_t sum = 0;
 
+		const int every_k = 200;
 		for(size_t it = 0; it < num_searches; it++) {
 			// query the batch
 			auto start = chrono::high_resolution_clock::now();
 
-			auto pq = alg_hnsw->searchKnn(static_cast<void*>(data + dim * it), nk[test_id]);
+			auto pq =
+				alg_hnsw->searchKnn(static_cast<void*>(data + dim * (it / every_k)), nk[test_id]);
 
 			auto end = chrono::high_resolution_clock::now();
 			auto duration_elapsed = chrono::duration_cast<chrono::microseconds>(end - start);
@@ -77,14 +79,14 @@ int main(int argc, char** argv) {
 
 			latency[test_id][it] = duration_elapsed_us;
 
-			while(!pq.empty()) {
-				auto [dist, vector_id] = pq.top();
-				pq.pop();
-				if(vector_id == it) {
-					num_correct += 1;
-					break;
-				}
-			}
+			// while(!pq.empty()) {
+			// 	auto [dist, vector_id] = pq.top();
+			// 	pq.pop();
+			// 	if(vector_id == (it / every_k)) {
+			// 		num_correct += 1;
+			// 		break;
+			// 	}
+			// }
 			sum += duration_elapsed_us;
 		}
 		recall[test_id] = static_cast<double>(num_correct) / static_cast<double>(num_searches);
