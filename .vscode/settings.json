@@ -6,6 +6,11 @@
         "editor.semanticHighlighting.enabled": true,
         "editor.formatOnSave": true,
     },
+    "[python]": {
+        "diffEditor.ignoreTrimWhitespace": false,
+        "editor.formatOnType": true,
+        "editor.wordBasedSuggestions": "off",
+    },
     "[cmake]": {
         "editor.formatOnSave": true,
         "editor.quickSuggestions": {
@@ -13,6 +18,21 @@
         }
     },
     "files.associations": {
-        "chrono": "cpp"
-    }
+        "chrono": "cpp",
+        "iostream": "cpp"
+    },
+    "cSpell.words": [
+        "distrib",
+        "faiss",
+        "figsize",
+        "fout",
+        "hnsw",
+        "hnswlib",
+        "iloc",
+        "ylim"
+    ],
+    "python.formatting.provider": "autopep8",
+    "python.formatting.autopep8Args": [
+        "--max-line-length=100"
+    ]
 }
