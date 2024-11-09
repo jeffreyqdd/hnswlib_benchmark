@@ -1,4 +1,11 @@
+# python
 .env
-build-Release/*
-build-Debug/*
+
+# build
+build-*
+
+# csv results
 results/*
+
+# gist dataset
+datasets/*
