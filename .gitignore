@@ -12,3 +12,6 @@ datasets/*
 
 # index results
 index/*
+
+# ignore dependencies
+dependencies/*
