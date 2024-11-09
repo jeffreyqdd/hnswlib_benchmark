@@ -9,3 +9,6 @@ results/*
 
 # gist dataset
 datasets/*
+
+# index results
+index/*

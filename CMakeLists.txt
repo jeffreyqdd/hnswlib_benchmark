@@ -19,6 +19,14 @@ include_directories("."j)
 include_directories("./dependencies/faiss")
 include_directories("./dependencies/hnswlib")
 
+find_package(OpenMP REQUIRED)
+add_compile_options(-std=c++20)
+
+find_package(TBB REQUIRED)
 
 add_executable(bench_st_sq src/bench_st_single_query.cpp)
-target_link_libraries(bench_st_sq PRIVATE hnswlib faiss)
+target_compile_options(bench_st_sq PRIVATE -fopenmp)
+target_link_libraries(bench_st_sq PRIVATE hnswlib faiss OpenMP::OpenMP_CXX)
+
+add_executable(build_hnsw src/create_hnsw.cpp)
+target_link_libraries(build_hnsw PRIVATE hnswlib TBB::tbb)

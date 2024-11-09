@@ -1,10 +1,11 @@
+#include "lib/argparser.hpp"
 #include "lib/embeddings.hpp"
-#include "lib/stopwatch.hpp"
 #include "lib/utils.hpp"
 
 #include <cassert>
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <hnswlib/hnswlib.h>
 #include <random>
 #include <vector>
@@ -13,11 +14,7 @@ namespace chrono = std::chrono;
 namespace fs = std::filesystem;
 
 // CONFIGURE HNSW
-inline constexpr int M = 32;
-inline constexpr int dim = 960;
-inline constexpr int nb = 1000;
-inline constexpr int ef_construction = 128;
-inline constexpr int ef = 64;
+int EF[] = { 100, 150, 200, 250, 300 };
 
 // We want to benchmark a few items
 //
@@ -32,91 +29,111 @@ inline constexpr int ef = 64;
 inline constexpr size_t RUNS_FOR_SINGLE_QUERY = 1000;
 
 // number of different vectors to try single queries on
-inline constexpr size_t NUM_SINGLE_QUERIES = 20;
+inline constexpr size_t NUM_SINGLE_QUERIES = 5;
 
 // the K to run the single query on
 inline constexpr size_t SINGLE_QUERY_K = 100;
 
-// number of runs for each top K
-inline constexpr size_t RUNS_FOR_TOP_K = 1000;
-
-// number of K's to try
-inline const std::vector<size_t> TOP_KS{ 1, 2, 5, 10, 20, 50, 100 };
-
 inline constexpr int num_threads = 32;
 int main(int argc, char** argv) {
-	int opt;
-	std::string result_path;
-	while((opt = getopt(argc, argv, "p:")) != -1) {
-		switch(opt) {
-		case 'p':
-			result_path = optarg;
-		default:
-			break;
-		}
+
+	// parse arguments because I'm cool
+	argparse::ArgumentParser program("bench_st_sq");
+
+	program.add_argument("gist_dir").help("path to base gist directory");
+	program.add_argument("res_path").help("path to directory to write result");
+	program.add_argument("index_path").help("path to hnsw index file");
+
+	try {
+		program.parse_args(argc, argv);
+	} catch(const std::exception& err) {
+		std::cerr << err.what() << std::endl;
+		std::cerr << program;
+		return 1;
 	}
 
-	std::cout << "generating test vectors graph" << std::endl;
-	const Embedding test_vectors = generate_test_vectors(nb, dim);
+	const fs::path gist_dir{ program.get<std::string>("gist_dir") };
+	const fs::path res_path{ program.get<std::string>("res_path") };
+	const fs::path index_path{ program.get<std::string>("index_path") };
 
-	hnswlib::L2Space space(dim);
-	hnswlib::HierarchicalNSW<float>* alg_hnsw =
-		new hnswlib::HierarchicalNSW<float>(&space, nb, M, ef_construction);
-	alg_hnsw->setEf(ef);
+	const fs::path gist_query = gist_dir / "gist_query.fvecs";
+	const fs::path gist_groundtruth = gist_dir / "gist_groundtruth.ivecs";
 
-	// Add data to the index
-	std::cout << "populating graph" << std::endl;
-	ParallelFor(0, nb, num_threads, [&test_vectors, &alg_hnsw](size_t row, size_t thread_id) {
-		if(row % 100 == 0)
-			std::cout << '\r' << row << "             ";
-		alg_hnsw->addPoint((void*)(test_vectors.data.get() + dim * row), row);
-	});
-	std::cout << std::endl;
+	std::cout << "Configurations: " << std::endl;
+	std::cout << std::format("\tNUM_QUERIES = {}", NUM_SINGLE_QUERIES) << std::endl;
+	std::cout << std::format("\tITERS_PER_QUERY = {}", RUNS_FOR_SINGLE_QUERY) << std::endl;
+	std::cout << std::format("\tTOP_K= {}", SINGLE_QUERY_K) << std::endl;
+
+	const auto GIST_Q = load_gist_960<float>(gist_query);
+	std::cout << std::format("gist query with NB = {} and DIM = {}", GIST_Q.nb, GIST_Q.dim)
+			  << std::endl;
+
+	const auto GIST_GT = load_gist_960<int>(gist_groundtruth);
+	std::cout << std::format("gist gt with NB = {} and DIM = {}", GIST_GT.nb, GIST_GT.dim)
+			  << std::endl;
+
+	assert(NUM_SINGLE_QUERIES <= GIST_Q.nb);
+
+	std::cout << std::format("loading from file: {}", index_path.string()) << std::endl;
+	hnswlib::L2Space space(960);
+	hnswlib::HierarchicalNSW<float> alg_hnsw = hnswlib::HierarchicalNSW<float>(&space, index_path);
 
 	// Test 1: performance querying a single query multiple times
 
 	// rows correspond to query id and columns correspond to the latency for that run
-	assert(NUM_SINGLE_QUERIES < nb);
-	uint64_t single_query_latency[NUM_SINGLE_QUERIES][RUNS_FOR_SINGLE_QUERY];
+	for(int ef : EF) {
+		uint64_t single_query_latency[NUM_SINGLE_QUERIES][RUNS_FOR_SINGLE_QUERY];
+		double single_query_recall[NUM_SINGLE_QUERIES];
 
-	for(size_t test_id = 0; test_id < NUM_SINGLE_QUERIES; test_id++) {
-		std::cout << "running single query test for id = " << test_id << std::endl;
-		for(size_t run_id = 0; run_id < RUNS_FOR_SINGLE_QUERY; run_id++) {
-			auto start = chrono::high_resolution_clock::now();
-			alg_hnsw->searchKnn(static_cast<void*>(test_vectors.data.get() + dim * test_id),
-								SINGLE_QUERY_K);
-			auto end = chrono::high_resolution_clock::now();
-			auto duration_elapsed = chrono::duration_cast<chrono::microseconds>(end - start);
-			uint64_t duration_elapsed_us = duration_elapsed.count();
-			single_query_latency[test_id][run_id] = duration_elapsed_us;
-		}
-	}
-
-	fs::path base_dir = fs::path(result_path);
-	fs::path csv_filename =
-		base_dir / fs::path("1-ST-CPU_dim_" + std::to_string(dim) + "_nb_" + std::to_string(nb) +
-							"_M_" + std::to_string(M) + "_ef_" + std::to_string(ef_construction) +
-							"_K_" + std::to_string(SINGLE_QUERY_K) + "_same_vector_latencies.csv");
-
-	std::ofstream fout(csv_filename);
-	if(fout.is_open()) {
-		fout << "id";
-		for(int iter = 0; iter < RUNS_FOR_SINGLE_QUERY; iter++)
-			fout << ", iter" << (iter + 1) << " (us)";
-
-		fout << '\n';
 		for(size_t test_id = 0; test_id < NUM_SINGLE_QUERIES; test_id++) {
-			fout << test_id;
+			std::cout << std::format("run id: {} ef: {}", test_id, ef) << std::endl;
+			std::priority_queue<std::pair<float, hnswlib::labeltype>> output;
 
-			for(int iter = 0; iter < RUNS_FOR_SINGLE_QUERY; iter++) {
-				fout << ", " << single_query_latency[test_id][iter];
+			// std::cout << "Q: " << GIST_Q.dim << " " << GIST_Q.nb << std::endl;
+			const float* vector_addr =
+				static_cast<float*>(GIST_Q.data.get() + GIST_Q.dim * test_id);
+			for(size_t run_id = 0; run_id < RUNS_FOR_SINGLE_QUERY; run_id++) {
+				auto start = chrono::high_resolution_clock::now();
+				auto o = alg_hnsw.searchKnn(vector_addr, SINGLE_QUERY_K);
+				auto end = chrono::high_resolution_clock::now();
+				auto duration_elapsed = chrono::duration_cast<chrono::microseconds>(end - start);
+				uint64_t duration_elapsed_us = duration_elapsed.count();
+				single_query_latency[test_id][run_id] = duration_elapsed_us;
+				output = std::move(o);
 			}
 
-			fout << '\n';
+			single_query_recall[test_id] = calculate_recall(test_id, GIST_GT, output);
+			std::cout << "\trecall: " << (single_query_recall[test_id] * 100) << "%" << std::endl;
 		}
-		fout.close();
-	} else {
-		std::cerr << "cannot open file: " << csv_filename << std::endl;
+
+		fs::path csv_filename =
+			res_path / fs::path(std::format(
+						   "1-ST-CPU_dim_960_nb_1000000_{}_searchef_{}_same_vector_latencies.csv",
+						   index_path.filename().string(),
+						   ef));
+
+		std::cout << "writing to file: " << csv_filename.string() << std::endl;
+		std::ofstream fout(csv_filename);
+		if(fout.is_open()) {
+			fout << "id";
+			for(int iter = 0; iter < RUNS_FOR_SINGLE_QUERY; iter++)
+				fout << ", iter" << (iter + 1) << " (us)";
+
+			fout << ", recall";
+			fout << '\n';
+			for(size_t test_id = 0; test_id < NUM_SINGLE_QUERIES; test_id++) {
+				fout << test_id;
+
+				for(int iter = 0; iter < RUNS_FOR_SINGLE_QUERY; iter++) {
+					fout << ", " << single_query_latency[test_id][iter];
+				}
+				fout << ", " << single_query_recall[test_id];
+				fout << '\n';
+			}
+			fout.close();
+		} else {
+			std::cerr << "cannot open file: " << csv_filename << std::endl;
+		}
 	}
 	return 0;
 }

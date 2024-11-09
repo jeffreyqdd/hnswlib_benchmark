@@ -18,3 +18,10 @@ See [runbook](RUNBOOK.md).
 9   1000        78.4  996520.486795  25651.817778  27980.20  28752.07
 ```
 ![output](output.png)
+
+## TODO
+1. check if we're still seeing spikes when k = 1
+2. Through put (x) vs. latency (y)
+3. historgram (y = cnt) (x = latency)
+ 
+look at weaviate & qdrant (distributed vector databases like vortex)

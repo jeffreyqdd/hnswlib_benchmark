@@ -1,9 +1,14 @@
 /* Meant to be a helper file to generate embeddings and the ground truth */
 #pragma once
 
+#include <cassert>
+#include <exception>
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <hnswlib/hnswlib.h>
 #include <memory>
+#include <queue>
 #include <unordered_set>
 
 template <typename T>
@@ -55,17 +60,20 @@ double calculate_recall(const int query_id,
 						const Embedding<int>& ground_truth,
 						std::priority_queue<std::pair<float, hnswlib::labeltype>>& results) {
 
-	const int top_k = ground_truth.nb;
-	const int total_queries = ground_truth.dim;
 	const int* truth_ptr = ground_truth.data.get();
 
-	std::unordered_set<bool> contains;
-	for(int i = 0; i < top_k; i++) {
-		const int* vector_id = truth_ptr + (query_id + total_queries * i);
+	std::unordered_set<int> contains;
+	/// 100, 1000
+
+	// std::cout << ground_truth.dim << " " << ground_truth.nb << std::endl;
+	for(int i = 0; i < ground_truth.dim; i++) {
+		const int* vector_id = truth_ptr + (query_id * ground_truth.dim + i);
 		contains.insert(*vector_id);
 	}
 
 	int num_hits = 0;
+	assert(contains.size() == 100);
+	// std::cout << contains.size() << std::endl;
 	while(!results.empty()) {
 		auto [dist, label] = results.top();
 		results.pop();
@@ -75,5 +83,5 @@ double calculate_recall(const int query_id,
 		}
 	}
 
-	return static_cast<double>(num_hits) / static_cast<double>(top_k);
+	return static_cast<double>(num_hits) / static_cast<double>(ground_truth.dim);
 }
